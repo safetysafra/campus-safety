@@ -1,0 +1,557 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>מערכת בטיחות קמפוס</title>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<link href="https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;500;600;700;800&display=swap" rel="stylesheet"/>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#080c14;color:#e2e8f0;font-family:'Heebo',sans-serif;direction:rtl;min-height:100vh}
+input,select,button{font-family:'Heebo',sans-serif;direction:rtl}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes fadeIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+
+const SUPABASE_URL = "https://seoeujvyvkymhysrtbag.supabase.co";
+const SUPABASE_KEY = "sb_publishable_splT03Fw9oIyONhFTrnSsA_aJdbfvw4";
+const EMAILJS_SERVICE  = "service_1ya848w";
+const EMAILJS_TEMPLATE = "template_p1iva18";
+const EMAILJS_KEY      = "wkjl6wR13Msb6emwW";
+const MANAGER_EMAIL    = "shmordehay@jerusalem.muni.il";
+
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+async function sendEmail(subject, message) {
+  try {
+    const r = await fetch("https://api.emailjs.com/api/v1.0/email/send",{
+      method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({service_id:EMAILJS_SERVICE,template_id:EMAILJS_TEMPLATE,user_id:EMAILJS_KEY,
+        template_params:{to_email:MANAGER_EMAIL,subject,message,from_name:"מערכת בטיחות קמפוס"}})
+    });
+    return r.status===200;
+  } catch{return false;}
+}
+
+const today = new Date();
+function daysUntil(d){return Math.floor((new Date(d)-today)/86400000);}
+function pStatus(p){
+  if(!p.has_file)return"red";
+  const d=daysUntil(p.expiry);
+  return d<0?"red":d<=60?"orange":"green";
+}
+function entityStatus(permits){
+  if(!permits||!permits.length)return"green";
+  const s=permits.map(pStatus);
+  return s.includes("red")?"red":s.includes("orange")?"orange":"green";
+}
+
+const SC={
+  green:{bg:"#0a2a1a",border:"#16a34a",text:"#4ade80",dot:"#22c55e",label:"תקין"},
+  orange:{bg:"#2a1a00",border:"#d97706",text:"#fbbf24",dot:"#f59e0b",label:"פג בקרוב"},
+  red:{bg:"#2a0a0a",border:"#dc2626",text:"#f87171",dot:"#ef4444",label:"דורש טיפול"},
+};
+
+const {useState,useEffect}=React;
+
+function Dot({s,size=10}){
+  return React.createElement("span",{style:{display:"inline-block",width:size,height:size,borderRadius:"50%",background:SC[s].dot,boxShadow:"0 0 8px "+SC[s].dot,flexShrink:0}});
+}
+function Badge({s}){
+  return React.createElement("span",{style:{display:"inline-flex",alignItems:"center",gap:5,padding:"3px 12px",borderRadius:20,background:SC[s].bg,border:"1px solid "+SC[s].border,color:SC[s].text,fontSize:12,fontWeight:600}},
+    React.createElement(Dot,{s,size:7}),SC[s].label);
+}
+function Toast({msg}){
+  if(!msg)return null;
+  return React.createElement("div",{style:{position:"fixed",bottom:30,left:"50%",transform:"translateX(-50%)",background:"#0f2a1f",border:"1px solid #16a34a",color:"#4ade80",padding:"12px 24px",borderRadius:12,zIndex:9999,fontSize:14,fontWeight:600,boxShadow:"0 4px 20px rgba(0,0,0,0.5)",whiteSpace:"nowrap"}},msg);
+}
+function Modal({title,onClose,children}){
+  return React.createElement("div",{style:{position:"fixed",inset:0,zIndex:1000,background:"rgba(0,0,0,0.85)",backdropFilter:"blur(6px)",display:"flex",alignItems:"center",justifyContent:"center",padding:16},onClick:onClose},
+    React.createElement("div",{style:{background:"#0d1526",border:"1px solid #1e2d4a",borderRadius:20,padding:24,maxWidth:520,width:"100%",maxHeight:"88vh",overflowY:"auto",boxShadow:"0 25px 60px rgba(0,0,0,0.9)",animation:"fadeIn .2s ease"},onClick:e=>e.stopPropagation()},
+      React.createElement("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}},
+        React.createElement("h2",{style:{margin:0,fontSize:18,color:"#f1f5f9",fontWeight:700}},title),
+        React.createElement("button",{onClick:onClose,style:{background:"#1e2d4a",border:"none",color:"#94a3b8",cursor:"pointer",fontSize:18,width:32,height:32,borderRadius:8,display:"flex",alignItems:"center",justifyContent:"center"}},"✕")
+      ),
+      children
+    )
+  );
+}
+
+const inp={width:"100%",padding:"11px 14px",borderRadius:10,background:"#0f1e35",border:"1px solid #1e2d4a",color:"#e2e8f0",fontSize:14,outline:"none",marginBottom:10};
+const card={background:"#0d1526",border:"1px solid #1e2d4a",borderRadius:14,padding:16,marginBottom:10,cursor:"pointer"};
+const btnPrimary={padding:"11px 20px",borderRadius:10,background:"#1d4ed8",border:"none",color:"white",fontSize:14,fontWeight:600,cursor:"pointer"};
+const btnSuccess={padding:"11px 20px",borderRadius:10,background:"#15803d",border:"none",color:"white",fontSize:14,fontWeight:600,cursor:"pointer"};
+const btnDanger={padding:"11px 20px",borderRadius:10,background:"#991b1b",border:"none",color:"white",fontSize:14,fontWeight:600,cursor:"pointer"};
+
+// ── Login Screen ──
+function LoginScreen({onLogin}){
+  const [email,setEmail]=useState("");
+  const [password,setPassword]=useState("");
+  const [loading,setLoading]=useState(false);
+  const [error,setError]=useState("");
+
+  async function login(){
+    if(!email||!password){setError("נא למלא מייל וסיסמה");return;}
+    setLoading(true);setError("");
+    const{data,error:err}=await sb.auth.signInWithPassword({email,password});
+    if(err){setError("מייל או סיסמה שגויים");setLoading(false);return;}
+    const{data:profile}=await sb.from("user_profiles").select("*").eq("id",data.user.id).single();
+    onLogin(data.user, profile);
+    setLoading(false);
+  }
+
+  return React.createElement("div",{style:{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",padding:20,background:"#080c14"}},
+    React.createElement("div",{style:{width:"100%",maxWidth:380,animation:"fadeIn .3s ease"}},
+      React.createElement("div",{style:{textAlign:"center",marginBottom:32}},
+        React.createElement("div",{style:{width:64,height:64,background:"linear-gradient(135deg,#1d4ed8,#0ea5e9)",borderRadius:16,display:"flex",alignItems:"center",justifyContent:"center",fontSize:30,margin:"0 auto 16px"}},"🛡"),
+        React.createElement("h1",{style:{fontSize:22,fontWeight:800,color:"#f1f5f9",marginBottom:4}},"מערכת בטיחות קמפוס"),
+        React.createElement("div",{style:{color:"#475569",fontSize:13}},"עיריית ירושלים")
+      ),
+      React.createElement("div",{style:{background:"#0d1526",border:"1px solid #1e2d4a",borderRadius:20,padding:24}},
+        error&&React.createElement("div",{style:{background:"#2a0a0a",border:"1px solid #dc2626",color:"#f87171",padding:"10px 14px",borderRadius:8,fontSize:13,marginBottom:12}},error),
+        React.createElement("input",{type:"email",placeholder:"כתובת מייל",value:email,onChange:e=>setEmail(e.target.value),onKeyDown:e=>e.key==="Enter"&&login(),style:inp}),
+        React.createElement("input",{type:"password",placeholder:"סיסמה",value:password,onChange:e=>setPassword(e.target.value),onKeyDown:e=>e.key==="Enter"&&login(),style:{...inp,marginBottom:16}}),
+        React.createElement("button",{onClick:login,disabled:loading,style:{...btnPrimary,width:"100%",padding:"13px",fontSize:15,opacity:loading?.7:1}},
+          loading?"מתחבר...":"כניסה למערכת"
+        )
+      )
+    )
+  );
+}
+
+// ── Buildings Panel ──
+function Buildings({buildings,setBuildings,canEdit}){
+  const [filter,setFilter]=useState(null);
+  const [sel,setSel]=useState(null);
+  const counts={green:0,orange:0,red:0};
+  buildings.forEach(b=>{counts[entityStatus(b.permits)]++;});
+  const list=filter?buildings.filter(b=>entityStatus(b.permits)===filter):buildings;
+
+  return React.createElement("div",null,
+    React.createElement("h2",{style:{fontSize:20,fontWeight:800,color:"#f1f5f9",marginBottom:16}},"🏢 בטיחות מבנים"),
+    React.createElement("div",{style:{display:"flex",gap:8,marginBottom:16}},
+      ["green","orange","red"].map(s=>
+        React.createElement("button",{key:s,onClick:()=>setFilter(filter===s?null:s),style:{flex:1,padding:"10px 6px",borderRadius:10,background:filter===s?SC[s].bg:"#0d1526",border:"2px solid "+(filter===s?SC[s].border:"#1e2d4a"),color:SC[s].text,fontWeight:800,fontSize:20,cursor:"pointer"}},
+          counts[s],React.createElement("div",{style:{fontSize:10,fontWeight:400,marginTop:2}},SC[s].label)
+        )
+      )
+    ),
+    list.map(b=>{
+      const st=entityStatus(b.permits);
+      return React.createElement("div",{key:b.id,onClick:()=>setSel(b),style:card},
+        React.createElement("div",{style:{display:"flex",alignItems:"center",justifyContent:"space-between"}},
+          React.createElement("div",{style:{display:"flex",alignItems:"center",gap:10}},
+            React.createElement(Dot,{s:st}),
+            React.createElement("span",{style:{color:"#e2e8f0",fontWeight:600}},b.name)
+          ),
+          React.createElement("div",{style:{display:"flex",gap:4}},b.permits.map((p,i)=>React.createElement(Dot,{key:i,s:pStatus(p),size:8})))
+        )
+      );
+    }),
+    sel&&React.createElement(Modal,{title:sel.name,onClose:()=>setSel(null)},
+      sel.permits.map((p,i)=>{
+        const st=pStatus(p);const d=daysUntil(p.expiry);
+        return React.createElement("div",{key:i,style:{padding:"12px 14px",borderRadius:10,background:SC[st].bg,border:"1px solid "+SC[st].border,marginBottom:8}},
+          React.createElement("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}},
+            React.createElement("span",{style:{color:"#f1f5f9",fontWeight:700}},p.type),
+            React.createElement(Badge,{s:st})
+          ),
+          React.createElement("div",{style:{fontSize:12,color:"#64748b"}},
+            "תוקף: "+p.expiry+" · "+(d<0?"פג לפני "+Math.abs(d)+" ימים":d+" ימים נותרו")+" · "+(p.has_file?"✅ מסמך קיים":"❌ חסר מסמך")
+          )
+        );
+      }),
+      canEdit&&React.createElement("button",{onClick:async()=>{
+        const lines=sel.permits.map(p=>(pStatus(p)==="green"?"✅ ":"❌ ")+p.type+": "+p.expiry).join("\n");
+        const ok=await sendEmail("דוח בטיחות - "+sel.name,"מבנה: "+sel.name+"\n\n"+lines);
+        setSel(null);alert(ok?"📧 נשלח!":"❌ שגיאה");
+      },style:{...btnPrimary,marginTop:14,width:"100%"}},"📧 שלח דוח למייל")
+    )
+  );
+}
+
+// ── Workers Panel ──
+function Workers({workers,setWorkers,contractors,userRole,userContractorId}){
+  const [search,setSearch]=useState("");
+  const [archive,setArchive]=useState(false);
+  const [sel,setSel]=useState(null);
+  const [adding,setAdding]=useState(false);
+  const [toast,setToast]=useState(null);
+  const [form,setForm]=useState({tz:"",name:"",contractor_id:"",project:"",location:""});
+  const showToast=msg=>{setToast(msg);setTimeout(()=>setToast(null),3000);};
+  const canEdit=userRole==="admin";
+
+  let list=workers.filter(w=>(archive?w.status==="archived":w.status==="active"));
+  if(userRole==="contractor")list=list.filter(w=>w.contractor_id===userContractorId);
+  list=list.filter(w=>w.name.includes(search)||w.tz.includes(search));
+
+  async function addWorker(){
+    if(!form.tz||!form.name||!form.contractor_id){alert("נא למלא שם, תז וקבלן");return;}
+    const{data,error}=await sb.from("workers").insert([{tz:form.tz,name:form.name,contractor_id:form.contractor_id,project:form.project,location:form.location,status:"active"}]).select();
+    if(error){alert("שגיאה: "+error.message);return;}
+    setWorkers(prev=>[...prev,{...data[0],permits:[]}]);
+    setForm({tz:"",name:"",contractor_id:"",project:"",location:""});
+    setAdding(false);showToast("✅ עובד נוסף!");
+  }
+
+  return React.createElement("div",null,
+    React.createElement(Toast,{msg:toast}),
+    React.createElement("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}},
+      React.createElement("h2",{style:{fontSize:20,fontWeight:800,color:"#f1f5f9"}},"👷 עובדים"),
+      canEdit&&React.createElement("button",{onClick:()=>setAdding(true),style:{...btnSuccess,padding:"8px 14px",fontSize:13}},"+ הוסף")
+    ),
+    React.createElement("div",{style:{display:"flex",gap:8,marginBottom:12}},
+      React.createElement("input",{value:search,onChange:e=>setSearch(e.target.value),placeholder:"חיפוש...",style:{...inp,marginBottom:0,flex:1}}),
+      canEdit&&React.createElement("button",{onClick:()=>setArchive(!archive),style:{padding:"10px 14px",borderRadius:10,background:archive?"#2a1a00":"#0d1526",border:"1px solid "+(archive?"#d97706":"#1e2d4a"),color:archive?"#fbbf24":"#94a3b8",fontSize:13,cursor:"pointer"}},archive?"🗂":"👥")
+    ),
+    list.map(w=>{
+      const st=entityStatus(w.permits);
+      return React.createElement("div",{key:w.id,onClick:()=>setSel(w),style:card},
+        React.createElement("div",{style:{display:"flex",alignItems:"center",gap:12}},
+          React.createElement("div",{style:{width:40,height:40,borderRadius:10,background:"#1e2d4a",display:"flex",alignItems:"center",justifyContent:"center",fontSize:20}},"👷"),
+          React.createElement("div",{style:{flex:1}},
+            React.createElement("div",{style:{color:"#f1f5f9",fontWeight:700}},w.name),
+            React.createElement("div",{style:{color:"#475569",fontSize:12}},w.project||"-")
+          ),
+          React.createElement(Badge,{s:st})
+        )
+      );
+    }),
+    list.length===0&&React.createElement("div",{style:{color:"#334155",textAlign:"center",padding:30}},"לא נמצאו עובדים"),
+
+    adding&&React.createElement(Modal,{title:"הוספת עובד",onClose:()=>setAdding(false)},
+      React.createElement("input",{placeholder:"תז *",value:form.tz,onChange:e=>setForm({...form,tz:e.target.value}),style:inp}),
+      React.createElement("input",{placeholder:"שם מלא *",value:form.name,onChange:e=>setForm({...form,name:e.target.value}),style:inp}),
+      React.createElement("select",{value:form.contractor_id,onChange:e=>setForm({...form,contractor_id:e.target.value}),style:{...inp}},
+        React.createElement("option",{value:""},"בחר קבלן *"),
+        contractors.map(c=>React.createElement("option",{key:c.id,value:c.id},c.name))
+      ),
+      React.createElement("input",{placeholder:"פרויקט",value:form.project,onChange:e=>setForm({...form,project:e.target.value}),style:inp}),
+      React.createElement("input",{placeholder:"מיקום",value:form.location,onChange:e=>setForm({...form,location:e.target.value}),style:inp}),
+      React.createElement("div",{style:{display:"flex",gap:8}},
+        React.createElement("button",{onClick:addWorker,style:{...btnSuccess,flex:1}},"✅ שמור"),
+        React.createElement("button",{onClick:()=>setAdding(false),style:{...btnDanger,flex:1}},"ביטול")
+      )
+    ),
+
+    sel&&React.createElement(Modal,{title:"כרטיס עובד – "+sel.name,onClose:()=>setSel(null)},
+      React.createElement("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:16}},
+        [["תז",sel.tz],["קבלן",contractors.find(c=>c.id===sel.contractor_id)?.name||"-"],["פרויקט",sel.project||"-"],["מיקום",sel.location||"-"]].map(([k,v])=>
+          React.createElement("div",{key:k,style:{background:"#0f1e35",border:"1px solid #1e2d4a",borderRadius:8,padding:"10px 12px"}},
+            React.createElement("div",{style:{color:"#475569",fontSize:11}},k),
+            React.createElement("div",{style:{color:"#e2e8f0",fontWeight:600,fontSize:13}},v)
+          )
+        )
+      ),
+      sel.permits.map((p,i)=>{
+        const st=pStatus(p);
+        return React.createElement("div",{key:i,style:{padding:"10px 12px",borderRadius:8,background:SC[st].bg,border:"1px solid "+SC[st].border,marginBottom:6}},
+          React.createElement("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center"}},
+            React.createElement("span",{style:{color:"#f1f5f9",fontSize:13,fontWeight:600}},p.type),
+            React.createElement(Badge,{s:st})
+          ),
+          React.createElement("div",{style:{fontSize:12,color:"#475569",marginTop:4}},"תוקף: "+p.expiry+" · "+(p.has_file?"✅ מסמך":"❌ חסר"))
+        );
+      }),
+      canEdit&&React.createElement("div",{style:{display:"flex",gap:8,marginTop:14}},
+        React.createElement("button",{onClick:async()=>{
+          const contractor=contractors.find(c=>c.id===sel.contractor_id)?.name||"";
+          const lines=sel.permits.map(p=>(pStatus(p)==="green"?"✅ ":"❌ ")+p.type+": "+p.expiry).join("\n")||"אין אישורים";
+          const ok=await sendEmail("תיק בטיחות - "+sel.name,"שם: "+sel.name+"\nתז: "+sel.tz+"\nקבלן: "+contractor+"\n\n"+lines);
+          setSel(null);showToast(ok?"📧 נשלח!":"❌ שגיאה");
+        },style:{...btnPrimary,flex:1}},"📧 שלח תיק")
+      )
+    )
+  );
+}
+
+// ── Contractors Panel ──
+function Contractors({contractors,setContractors,canEdit}){
+  const [adding,setAdding]=useState(false);
+  const [form,setForm]=useState({name:"",project:""});
+  const [toast,setToast]=useState(null);
+  const showToast=msg=>{setToast(msg);setTimeout(()=>setToast(null),3000);};
+
+  async function addContractor(){
+    if(!form.name||!form.project){alert("נא למלא שם ופרויקט");return;}
+    const{data,error}=await sb.from("contractors").insert([{name:form.name,project:form.project,active:true}]).select();
+    if(error){alert("שגיאה: "+error.message);return;}
+    setContractors(prev=>[...prev,data[0]]);
+    setForm({name:"",project:""});setAdding(false);showToast("✅ קבלן נוסף!");
+  }
+
+  return React.createElement("div",null,
+    React.createElement(Toast,{msg:toast}),
+    React.createElement("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}},
+      React.createElement("h2",{style:{fontSize:20,fontWeight:800,color:"#f1f5f9"}},"🔨 קבלנים"),
+      canEdit&&React.createElement("button",{onClick:()=>setAdding(true),style:{...btnSuccess,padding:"8px 14px",fontSize:13}},"+ הוסף")
+    ),
+    contractors.map(c=>
+      React.createElement("div",{key:c.id,style:{...card,cursor:"default"}},
+        React.createElement("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center"}},
+          React.createElement("div",null,
+            React.createElement("div",{style:{color:"#f1f5f9",fontWeight:700}},c.name),
+            React.createElement("div",{style:{color:"#475569",fontSize:12,marginTop:2}},c.project)
+          ),
+          React.createElement("span",{style:{fontSize:11,padding:"3px 10px",borderRadius:20,background:c.active?"#0a2a1a":"#1e2d4a",border:"1px solid "+(c.active?"#16a34a":"#334155"),color:c.active?"#4ade80":"#64748b"}},c.active?"פעיל":"לא פעיל")
+        )
+      )
+    ),
+    adding&&React.createElement(Modal,{title:"הוספת קבלן",onClose:()=>setAdding(false)},
+      React.createElement("input",{placeholder:'שם חברה *',value:form.name,onChange:e=>setForm({...form,name:e.target.value}),style:inp}),
+      React.createElement("input",{placeholder:"פרויקט *",value:form.project,onChange:e=>setForm({...form,project:e.target.value}),style:inp}),
+      React.createElement("div",{style:{display:"flex",gap:8}},
+        React.createElement("button",{onClick:addContractor,style:{...btnSuccess,flex:1}},"✅ שמור"),
+        React.createElement("button",{onClick:()=>setAdding(false),style:{...btnDanger,flex:1}},"ביטול")
+      )
+    )
+  );
+}
+
+// ── Invite User (Admin only) ──
+function InviteUsers({contractors}){
+  const [email,setEmail]=useState("");
+  const [role,setRole]=useState("viewer");
+  const [contractorId,setContractorId]=useState("");
+  const [toast,setToast]=useState(null);
+  const showToast=msg=>{setToast(msg);setTimeout(()=>setToast(null),3000);};
+
+  async function inviteUser(){
+    if(!email){alert("נא להכניס מייל");return;}
+    if(role==="contractor"&&!contractorId){alert("נא לבחור קבלן");return;}
+    const{data,error}=await sb.auth.admin.inviteUserByEmail(email);
+    if(error){
+      showToast("⚠️ שליחת הזמנה נכשלה — הוסף ידנית ב-Supabase");
+      return;
+    }
+    if(data?.user?.id){
+      await sb.from("user_profiles").insert([{id:data.user.id,email,role,contractor_id:role==="contractor"?contractorId:null,full_name:""}]);
+    }
+    setEmail("");setRole("viewer");setContractorId("");
+    showToast("✅ הזמנה נשלחה!");
+  }
+
+  const roleLabels={admin:"👑 מנהל",viewer:"👁️ צופה",contractor:"🔨 קבלן"};
+
+  return React.createElement("div",null,
+    React.createElement(Toast,{msg:toast}),
+    React.createElement("h2",{style:{fontSize:20,fontWeight:800,color:"#f1f5f9",marginBottom:16}},"👥 ניהול משתמשים"),
+    React.createElement("div",{style:{background:"#0d1526",border:"1px solid #1e2d4a",borderRadius:14,padding:20,marginBottom:16}},
+      React.createElement("div",{style:{fontWeight:700,color:"#f1f5f9",marginBottom:12}},"הזמן משתמש חדש"),
+      React.createElement("input",{type:"email",placeholder:"כתובת מייל",value:email,onChange:e=>setEmail(e.target.value),style:inp}),
+      React.createElement("select",{value:role,onChange:e=>setRole(e.target.value),style:{...inp}},
+        Object.entries(roleLabels).map(([k,v])=>React.createElement("option",{key:k,value:k},v))
+      ),
+      role==="contractor"&&React.createElement("select",{value:contractorId,onChange:e=>setContractorId(e.target.value),style:{...inp}},
+        React.createElement("option",{value:""},"בחר קבלן"),
+        contractors.map(c=>React.createElement("option",{key:c.id,value:c.id},c.name))
+      ),
+      React.createElement("button",{onClick:inviteUser,style:{...btnPrimary,width:"100%"}},"📧 שלח הזמנה")
+    ),
+    React.createElement("div",{style:{background:"#0a1a0a",border:"1px solid #1a3a1a",borderRadius:12,padding:16}},
+      React.createElement("div",{style:{fontWeight:600,color:"#4ade80",marginBottom:8,fontSize:13}},"💡 הוספה ידנית"),
+      React.createElement("div",{style:{color:"#475569",fontSize:12,lineHeight:1.6}},
+        "1. היכנס ל-Supabase → Authentication → Users",React.createElement("br"),
+        "2. לחץ Add user → Create new user",React.createElement("br"),
+        "3. הכנס מייל וסיסמה",React.createElement("br"),
+        "4. העתק את ה-UID של המשתמש",React.createElement("br"),
+        "5. הוסף ב-SQL Editor:",React.createElement("br"),
+        React.createElement("code",{style:{fontSize:11,color:"#60a5fa",display:"block",marginTop:6,background:"#0f1e35",padding:8,borderRadius:6,direction:"ltr",textAlign:"left"}},
+          "insert into user_profiles (id,email,role)\nvalues ('UID','email@x.com','viewer');"
+        )
+      )
+    )
+  );
+}
+
+// ── SpotCheck ──
+function SpotCheck({workers,contractors}){
+  const [selProject,setSelProject]=useState(null);
+  const projects=[...new Set(workers.filter(w=>w.status==="active").map(w=>w.project).filter(Boolean))];
+
+  return React.createElement("div",null,
+    React.createElement("h2",{style:{fontSize:20,fontWeight:800,color:"#f1f5f9",marginBottom:6}},"🔍 ביקורת פתע"),
+    React.createElement("div",{style:{color:"#475569",fontSize:13,marginBottom:16}},"בחר פרויקט"),
+    projects.length===0&&React.createElement("div",{style:{color:"#334155",textAlign:"center",padding:30}},"אין פרויקטים פעילים"),
+    projects.map(p=>
+      React.createElement("div",{key:p,onClick:()=>setSelProject(selProject===p?null:p),style:{...card,background:selProject===p?"#0f2040":"#0d1526",borderColor:selProject===p?"#3b82f6":"#1e2d4a"}},
+        React.createElement("div",{style:{color:"#f1f5f9",fontWeight:700}},"🔨 "+p)
+      )
+    ),
+    selProject&&(()=>{
+      const pw=workers.filter(w=>w.status==="active"&&w.project===selProject);
+      return React.createElement("div",{style:{marginTop:8}},
+        React.createElement("div",{style:{color:"#64748b",fontSize:13,marginBottom:10}},pw.length+" עובדים"),
+        pw.map(w=>{
+          const st=entityStatus(w.permits);
+          return React.createElement("div",{key:w.id,style:{display:"flex",alignItems:"center",gap:12,padding:"14px 16px",borderRadius:12,background:SC[st].bg,border:"1px solid "+SC[st].border,marginBottom:8}},
+            React.createElement("div",{style:{width:44,height:44,borderRadius:12,background:"#1e2d4a",display:"flex",alignItems:"center",justifyContent:"center",fontSize:24}},"👷"),
+            React.createElement("div",{style:{flex:1}},
+              React.createElement("div",{style:{color:"#f1f5f9",fontWeight:700,fontSize:15}},w.name),
+              React.createElement("div",{style:{color:"#475569",fontSize:12}},"תז: "+w.tz)
+            ),
+            React.createElement(Badge,{s:st})
+          );
+        })
+      );
+    })()
+  );
+}
+
+// ── Dashboard ──
+function Dashboard({contractors,workers,buildings,onTab,userRole}){
+  const bCounts={green:0,orange:0,red:0};
+  buildings.forEach(b=>{bCounts[entityStatus(b.permits)]++;});
+  const wCounts={green:0,orange:0,red:0};
+  workers.filter(w=>w.status==="active").forEach(w=>{wCounts[entityStatus(w.permits)]++;});
+  const alerts=buildings.flatMap(b=>b.permits.filter(p=>pStatus(p)!=="green").map(p=>({name:b.name,type:p.type,status:pStatus(p),expiry:p.expiry})));
+  const roleLabel={admin:"👑 מנהל",viewer:"👁️ צופה",contractor:"🔨 קבלן"};
+
+  return React.createElement("div",null,
+    React.createElement("div",{style:{marginBottom:24}},
+      React.createElement("h1",{style:{fontSize:22,fontWeight:800,color:"#f1f5f9",marginBottom:4}},"מרכז שליטה"),
+      React.createElement("div",{style:{color:"#475569",fontSize:13}},"עיריית ירושלים · "+roleLabel[userRole])
+    ),
+    React.createElement("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}},
+      userRole!=="contractor"&&React.createElement("div",{onClick:()=>onTab("buildings"),style:{...card,background:"linear-gradient(135deg,#0d1526,#111e38)"}},
+        React.createElement("div",{style:{fontSize:12,color:"#64748b",marginBottom:8}},"🏢 מבנים"),
+        React.createElement("div",{style:{display:"flex",gap:10}},["green","orange","red"].map(s=>
+          React.createElement("div",{key:s,style:{textAlign:"center"}},
+            React.createElement("div",{style:{fontSize:20,fontWeight:800,color:SC[s].text}},bCounts[s]),
+            React.createElement(Dot,{s,size:7})
+          )
+        ))
+      ),
+      React.createElement("div",{onClick:()=>onTab("workers"),style:{...card,background:"linear-gradient(135deg,#0d1526,#111e38)"}},
+        React.createElement("div",{style:{fontSize:12,color:"#64748b",marginBottom:8}},"👷 עובדים"),
+        React.createElement("div",{style:{display:"flex",gap:10}},["green","orange","red"].map(s=>
+          React.createElement("div",{key:s,style:{textAlign:"center"}},
+            React.createElement("div",{style:{fontSize:20,fontWeight:800,color:SC[s].text}},wCounts[s]),
+            React.createElement(Dot,{s,size:7})
+          )
+        ))
+      )
+    ),
+    userRole==="admin"&&alerts.length>0&&React.createElement("div",{style:{background:"#0d1526",border:"1px solid #1e2d4a",borderRadius:14,padding:16}},
+      React.createElement("div",{style:{fontWeight:700,color:"#f1f5f9",marginBottom:12,fontSize:14}},"⚠️ התראות פעילות"),
+      alerts.slice(0,5).map((a,i)=>
+        React.createElement("div",{key:i,style:{display:"flex",alignItems:"center",gap:8,padding:"8px 12px",borderRadius:8,background:SC[a.status].bg,border:"1px solid "+SC[a.status].border,marginBottom:6}},
+          React.createElement(Dot,{s:a.status}),
+          React.createElement("span",{style:{color:"#e2e8f0",fontSize:13,flex:1}},a.name+" — "+a.type),
+          React.createElement("span",{style:{color:"#475569",fontSize:11}},a.expiry)
+        )
+      )
+    )
+  );
+}
+
+// ── Main App ──
+function App(){
+  const [user,setUser]=useState(null);
+  const [profile,setProfile]=useState(null);
+  const [tab,setTab]=useState("dashboard");
+  const [contractors,setContractors]=useState([]);
+  const [workers,setWorkers]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [buildings]=useState([
+    {id:"b1",name:"בניין 1 - מינהל",permits:[{id:"p1",type:"כריזה",expiry:"2025-04-10",has_file:true},{id:"p2",type:"גילוי אש",expiry:"2025-08-01",has_file:true},{id:"p3",type:"מטף",expiry:"2025-02-01",has_file:false}]},
+    {id:"b2",name:"בניין 2 - הנדסה",permits:[{id:"p4",type:"כריזה",expiry:"2025-06-20",has_file:true},{id:"p5",type:"גילוי אש",expiry:"2025-12-01",has_file:true},{id:"p6",type:"מטף",expiry:"2025-11-15",has_file:true}]},
+    {id:"b3",name:"בניין 3 - מדעים",permits:[{id:"p7",type:"כריזה",expiry:"2025-03-25",has_file:true},{id:"p8",type:"גילוי אש",expiry:"2025-03-01",has_file:false},{id:"p9",type:"מטף",expiry:"2026-01-10",has_file:true}]},
+    {id:"b4",name:"בניין 17 - ספרייה",permits:[{id:"p10",type:"כריזה",expiry:"2026-02-01",has_file:true},{id:"p11",type:"גילוי אש",expiry:"2025-10-15",has_file:true},{id:"p12",type:"מטף",expiry:"2025-09-30",has_file:true}]},
+    {id:"b5",name:"בניין 19 - אומנויות",permits:[{id:"p13",type:"כריזה",expiry:"2025-01-15",has_file:false},{id:"p14",type:"גילוי אש",expiry:"2025-03-20",has_file:true},{id:"p15",type:"מטף",expiry:"2025-03-28",has_file:true}]},
+  ]);
+
+  useEffect(()=>{
+    sb.auth.getSession().then(({data:{session}})=>{
+      if(session){
+        setUser(session.user);
+        sb.from("user_profiles").select("*").eq("id",session.user.id).single().then(({data})=>{
+          setProfile(data);
+          loadData(data);
+        });
+      } else {
+        setLoading(false);
+      }
+    });
+  },[]);
+
+  async function loadData(prof){
+    const{data:c}=await sb.from("contractors").select("*").order("created_at");
+    const{data:w}=await sb.from("workers").select("*").order("created_at");
+    const{data:p}=await sb.from("permits").select("*");
+    if(c)setContractors(c);
+    if(w&&p){
+      let workerList=w.map(ww=>({...ww,permits:(p||[]).filter(pp=>pp.entity_type==="worker"&&pp.entity_id===ww.id)}));
+      if(prof?.role==="contractor")workerList=workerList.filter(ww=>ww.contractor_id===prof.contractor_id);
+      setWorkers(workerList);
+    }
+    setLoading(false);
+  }
+
+  function handleLogin(u,p){setUser(u);setProfile(p);loadData(p);}
+
+  async function handleLogout(){
+    await sb.auth.signOut();
+    setUser(null);setProfile(null);setTab("dashboard");
+  }
+
+  if(!user&&!loading)return React.createElement(LoginScreen,{onLogin:handleLogin});
+
+  if(loading)return React.createElement("div",{style:{display:"flex",alignItems:"center",justifyContent:"center",minHeight:"100vh",flexDirection:"column",gap:16}},
+    React.createElement("div",{style:{width:48,height:48,border:"3px solid #1e2d4a",borderTop:"3px solid #3b82f6",borderRadius:"50%",animation:"spin 1s linear infinite"}}),
+    React.createElement("div",{style:{color:"#475569"}})
+  );
+
+  const role=profile?.role||"viewer";
+  const canEdit=role==="admin";
+
+  const tabs=[
+    {id:"dashboard",label:"🏠",title:"דשבורד"},
+    ...(role!=="contractor"?[{id:"buildings",label:"🏢",title:"מבנים"}]:[]),
+    {id:"workers",label:"👷",title:"עובדים"},
+    ...(canEdit?[{id:"contractors",label:"🔨",title:"קבלנים"},{id:"users",label:"👥",title:"משתמשים"}]:[]),
+    {id:"spotcheck",label:"🔍",title:"ביקורת"},
+  ];
+
+  return React.createElement("div",{style:{minHeight:"100vh",background:"#080c14",paddingBottom:80}},
+    React.createElement("div",{style:{background:"#0d1526",borderBottom:"1px solid #1e2d4a",padding:"12px 16px",position:"sticky",top:0,zIndex:100,display:"flex",alignItems:"center",justifyContent:"space-between"}},
+      React.createElement("div",{style:{display:"flex",alignItems:"center",gap:10}},
+        React.createElement("div",{style:{width:34,height:34,background:"linear-gradient(135deg,#1d4ed8,#0ea5e9)",borderRadius:10,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16}},"🛡"),
+        React.createElement("div",null,
+          React.createElement("div",{style:{fontWeight:800,fontSize:14,color:"#f1f5f9"}},"בטיחות קמפוס"),
+          React.createElement("div",{style:{fontSize:10,color:"#334155"}},{admin:"👑 מנהל",viewer:"👁️ צופה",contractor:"🔨 קבלן"}[role])
+        )
+      ),
+      React.createElement("button",{onClick:handleLogout,style:{background:"#1e2d4a",border:"none",color:"#94a3b8",cursor:"pointer",padding:"6px 12px",borderRadius:8,fontSize:12}},"יציאה")
+    ),
+    React.createElement("div",{style:{maxWidth:640,margin:"0 auto",padding:16}},
+      tab==="dashboard"&&React.createElement(Dashboard,{contractors,workers,buildings,onTab:setTab,userRole:role}),
+      tab==="buildings"&&React.createElement(Buildings,{buildings,setBuildings:()=>{},canEdit}),
+      tab==="workers"&&React.createElement(Workers,{workers,setWorkers,contractors,userRole:role,userContractorId:profile?.contractor_id}),
+      tab==="contractors"&&React.createElement(Contractors,{contractors,setContractors,canEdit}),
+      tab==="users"&&React.createElement(InviteUsers,{contractors}),
+      tab==="spotcheck"&&React.createElement(SpotCheck,{workers,contractors})
+    ),
+    React.createElement("div",{style:{position:"fixed",bottom:0,left:0,right:0,background:"#0d1526",borderTop:"1px solid #1e2d4a",display:"flex",zIndex:100}},
+      tabs.map(t=>
+        React.createElement("button",{key:t.id,onClick:()=>setTab(t.id),style:{flex:1,padding:"10px 4px",background:"none",border:"none",color:tab===t.id?"#60a5fa":"#334155",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:3,borderTop:tab===t.id?"2px solid #3b82f6":"2px solid transparent"}},
+          React.createElement("span",{style:{fontSize:18}},t.label),
+          React.createElement("span",{style:{fontSize:10,fontWeight:tab===t.id?700:400}},t.title)
+        )
+      )
+    )
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(App));
+</script>
+</body>
+</html>
